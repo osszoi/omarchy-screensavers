@@ -1,0 +1,42 @@
+#!/usr/bin/env bash
+# makes one screensaver the active one and switches the other two kinds off
+set -euo pipefail
+
+choice=${1:-}
+case $choice in
+world | cave | maze | topo | circuit | nvim | omarchy) ;;
+*)
+  echo "usage: screensavers-apply <world|cave|maze|topo|circuit|nvim|omarchy>" >&2
+  exit 1
+  ;;
+esac
+
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+config="$config_home/omarchy-screensavers/config.json"
+nvim="$config_home/omarchy/plugins/eduardo.nvim-screensaver/config.json"
+
+if [[ $choice == nvim && ! -f $nvim ]]; then
+  echo "eduardo.nvim-screensaver is not installed" >&2
+  exit 1
+fi
+
+mkdir -p "$(dirname "$config")"
+[[ -s $config ]] || echo '{}' >"$config"
+updated=$(jq --arg active "$choice" '.active = $active' "$config")
+printf '%s\n' "$updated" >"$config"
+
+# the nvim screensaver switches omarchy's own one off every time it loads, unless told not to
+if [[ -f $nvim ]]; then
+  enabled=false builtin_off=true
+  [[ $choice == nvim ]] && enabled=true
+  [[ $choice == omarchy ]] && builtin_off=false
+  updated=$(jq --argjson enabled "$enabled" --argjson off "$builtin_off" '.enabled = $enabled | .disableBuiltinScreensaver = $off' "$nvim")
+  printf '%s\n' "$updated" >"$nvim"
+  omarchy-shell nvim-screensaver reload >/dev/null 2>&1 || true
+fi
+
+if [[ $choice == omarchy ]]; then
+  omarchy-toggle screensaver-off off
+else
+  omarchy-toggle screensaver-off on
+fi
